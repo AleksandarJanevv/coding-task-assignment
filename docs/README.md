@@ -1,69 +1,132 @@
-# Read this first!
-This repository is a template repository for our technical interview, so create your own project using this guide:
+# Claims API
 
-[GitHub - Creating a repository from a template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
+A RESTful Web API built with **ASP.NET Core (.NET 10)** for managing insurance covers and claims. The application provides CRUD operations, business rule validation, premium calculation, and asynchronous auditing.
 
-An alternative is to download the code and create a new repository using a different VCS provider (gitlab / Azure repos). **Do not fork this repository.**
+## Technologies
 
-## Using AI assistance
-We expect that many of you will use AI tools (LLMs, coding assistants, agents) while solving this task, and that is perfectly fine. Please keep the following in mind:
+- C# / .NET 10
+- ASP.NET Core Web API
+- Entity Framework Core
+- Microsoft SQL Server
+- MongoDB
+- Docker
+- xUnit (unit testing)
 
--  👀📖 **Your code will be read by humans.** Reviewers will read your solution before the interview, so aim for code that is clear, focused and easy to follow. More code is not better code.  This also applies to any documentation you write: use clear language intended for human readers. AI slop is frowned upon.
-- **Feel free to share your AI artifacts.** If you used AI assistance, we encourage you to include the artifacts you created along the way, for example custom instructions, skills, a plan written to markdown, or session output. This is optional, but it helps us understand how you work.
+## Features
 
-## Submitting your solution
-When you have completed the tasks, please share the repository link with us. We will review your submission before the interview.
+### Claims Management
+- Retrieve all claims or a specific claim.
+- Create claims associated with existing insurance covers.
+- Delete existing claims.
+- Validate claim damage costs and coverage periods.
 
-When you are happy with your solution, it would be really helpful if you created a pull request where you explain your chain of thought. AI-assisted coding tends to produce a lot of code, so use it to guide us 🧭:
-- Which parts of the code should we pay the most attention to?
-- Which trade-offs did you make, and which assumptions did you rely on?
-- What would you like to show and discuss during the interview? (And rest assured, we will come up with our own topics too 🙂) 
+### Covers Management
+- Retrieve all covers or a specific cover.
+- Create and delete insurance covers.
+- Automatically calculate insurance premiums based on cover type and duration.
+- Prevent deletion of covers that have associated claims.
 
-Good luck! 😊
+### Architecture and Design
+- **Service Layer:** Separates business logic from HTTP controllers.
+- **Data Access:** Uses Entity Framework Core and SQL Server for application data.
+- **Validation:** Dedicated validators enforce business rules.
+- **Builder Pattern:** Provides a consistent way to construct custom API exceptions.
+- **Global Exception Handling:** Centralizes exception handling and standardized API error responses.
+- **Asynchronous Auditing:** Uses a background service and an audit queue to process audit events independently of API requests.
+- **MongoDB Auditing:** Uses MongoDB running in Docker to store audit records.
 
-# Prerequisites
+## Getting Started
 
-- Your favourite IDE to code in C# 😊
-- _Optional_ - an Azure Subscription. You can demo this API by hosting it in Azure. If that is not an option for you, you can run the demo having a locally running instance. If you select a different cloud provider, that is fine for us.
-	- _This requires a rewrite of the setup (program.cs) of the application, as it currently depends on TestContainer packages to simplify the local development experience._
-- `Docker Desktop` or a different Docker deamon running on your machine.
+### Prerequisites
 
-# Programming Task
-Complete the backend for a multi-tier application for Insurance Claims Handling.
-The use case is to maintain a list of insurance claims. The user should be able to create, delete and read claims.
-## Task 1
-The codebase is messy:
-* The controller has too much responsibility. 
-* Introduce proper layering within the codebase. 
-* Documentation is missing.
-* ++
+- .NET 10 SDK
+- Microsoft SQL Server
+- Docker Desktop
+- MongoDB (Docker container)
 
-Adhere to the SOLID principles.
+### Configuration
 
-### Task 2
-As you can see, the API supports some basic REST operations. But validation is missing. The basic rules are:
+Configure your SQL Server connection string in `appsettings.json`:
 
-* Claim
-  * DamageCost cannot exceed 100.000
-  * Created date must be within the period of the related Cover
-* Cover
-  * StartDate cannot be in the past
-  * total insurance period cannot exceed 1 year
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=YOUR_SERVER;Database=ClaimsDb;Trusted_Connection=True;TrustServerCertificate=True;"
+  }
+}
+```
 
-## Task 3
-Auditing. The basics are there, but the execution of the DB command (INSERT & DELETE) blocks the processing of the HTTP request. How can this be improved? Look into some asynchronous patterns. It is ok to introduce an Azure managed service to help you with this (ServiceBus/EventGrid/Whatever), but that is not required. Whatever you can manage to get working which is in-memory is also ok.
+Configure your MongoDB connection string and database name:
 
-## Task 4
-One basic test is included, please add other (mandatory) unit tests. Note: If you start on this task first, you will find it hard to write proper tests. Some refactoring of the Claims API will be needed. 
+```json
+{
+  "MongoDbSettings": {
+    "ConnectionString": "mongodb://localhost:27017",
+    "DatabaseName": "ClaimsAuditDb"
+  }
+}
+```
 
-## Task 5
-Cover premium computation formula evolved over time. Fellow developers were lazy and omitted all tests. Now there are a couple of bugs. Can you fix them? Can you make the computation more readable?
+Adjust these settings according to your environment.
 
-Desired logic: 
-* Premium depends on the type of the covered object and the length of the insurance period. 
-* Base day rate was set to be 1250.
-* Yacht should be 10% more expensive, Passenger ship 20%, Tanker 50%, and other types 30%
-* The length of the insurance period should influence the premium progressively:
-  * First 30 days are computed based on the logic above
-  * Following 150 days are discounted by 5% for Yacht and by 2% for other types
-  * The remaining days are discounted by additional 3% for Yacht and by 1% for other types
+### Start MongoDB with Docker
+
+Start the MongoDB container:
+
+```bash
+docker run -d \
+  --name claims-mongodb \
+  -p 27017:27017 \
+  -v claims-mongo-data:/data/db \
+  mongo
+```
+
+The named Docker volume ensures that MongoDB data persists when the container is stopped or removed.
+
+To start the existing container again:
+
+```bash
+docker start claims-mongodb
+```
+
+### Database Setup
+
+Apply Entity Framework Core migrations:
+
+```bash
+dotnet ef database update
+```
+
+### Running the Application
+
+```bash
+dotnet restore
+dotnet build
+dotnet run
+```
+
+### Testing
+
+Run the unit tests:
+
+```bash
+dotnet test
+```
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/claims` | Retrieve all claims |
+| GET | `/claims/{id}` | Retrieve a specific claim |
+| POST | `/claims` | Create a claim |
+| DELETE | `/claims/{id}` | Delete a claim |
+| GET | `/covers` | Retrieve all covers |
+| GET | `/covers/{id}` | Retrieve a specific cover |
+| POST | `/covers` | Create a cover |
+| DELETE | `/covers/{id}` | Delete a cover |
+| POST | `/covers/compute` | Calculate a cover premium |
+
+---
+
+**Note:** API error responses follow a standardized structure containing a return code, error details, and an optional entity identifier.

@@ -1,5 +1,9 @@
+using Claims;
 using Claims.Auditing;
 using Claims.Controllers;
+using Claims.Exceptions;
+using Claims.Services;
+using Claims.Validation;
 using Microsoft.EntityFrameworkCore;
 using MongoDB.Driver;
 using System.Runtime.InteropServices;
@@ -9,39 +13,41 @@ using Testcontainers.MsSql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Start Testcontainers for SQL Server and MongoDB
-var sqlContainer = new MsSqlBuilder(RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-        ? "mcr.microsoft.com/mssql/server:2022-latest"
-        : "mcr.microsoft.com/mssql/server:2019-CU18-ubuntu-20.04")
-    .Build();
+// Required Services
+builder.Services.AddControllers();
 
-var mongoContainer = new MongoDbBuilder("mongo:latest")
-    .Build();
+// SQL Server - Claims and Covers
+builder.Services.AddDbContext<ClaimsRepository>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-await sqlContainer.StartAsync();
-await mongoContainer.StartAsync();
+// MongoDB - Auditing
+var mongoClient = new MongoClient(
+    builder.Configuration["MongoDb:ConnectionString"]);
 
-// Add services to the container.
-builder.Services
-    .AddControllers()
-    .AddJsonOptions(x =>
-    {
-        x.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
-    });
+var mongoDatabase = mongoClient.GetDatabase(
+    builder.Configuration["MongoDb:DatabaseName"]);
 
-builder.Services.AddDbContext<AuditContext>(options =>
-    options.UseSqlServer(sqlContainer.GetConnectionString()));
+builder.Services.AddSingleton<IMongoClient>(mongoClient);
+builder.Services.AddSingleton<IMongoDatabase>(mongoDatabase);
 
-builder.Services.AddDbContext<ClaimsContext>(options =>
-{
-    var client = new MongoClient(mongoContainer.GetConnectionString());
-    var database = client.GetDatabase(builder.Configuration["MongoDb:DatabaseName"]); // Use a default/test database name
-    options.UseMongoDB(database.Client, database.DatabaseNamespace.DatabaseName);
-});
+// Dependency Injection
+builder.Services.AddScoped<IClaimsService, ClaimsService>();
+builder.Services.AddScoped<ICoversService, CoversService>();
+// Validators
+builder.Services.AddScoped<ClaimsValidator>();
+builder.Services.AddScoped<CoversValidator>();
+builder.Services.AddSingleton<CoversServiceUtils>();
+
+// DI - Auditing
+builder.Services.AddSingleton<IAuditQueue, AuditQueue>();
+builder.Services.AddScoped<IAuditer, Auditer>();
+builder.Services.AddHostedService<AuditBackgroundService>();
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
@@ -56,11 +62,14 @@ app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
+app.UseExceptionHandler();
+
 app.MapControllers();
 
 using (var scope = app.Services.CreateScope())
 {
-    var context = scope.ServiceProvider.GetRequiredService<AuditContext>();
+    var context = scope.ServiceProvider.GetRequiredService<ClaimsRepository>();
+
     context.Database.Migrate();
 }
 

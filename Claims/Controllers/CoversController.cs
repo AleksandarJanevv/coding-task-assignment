@@ -1,98 +1,96 @@
-using Claims.Auditing;
+using Claims.DTO;
+using Claims.Models;
+using Claims.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
-namespace Claims.Controllers;
-
-[ApiController]
-[Route("[controller]")]
-public class CoversController : ControllerBase
+namespace Claims.Controllers
 {
-    private readonly ClaimsContext _claimsContext;
-    private readonly ILogger<CoversController> _logger;
-    private readonly Auditer _auditer;
-
-    public CoversController(ClaimsContext claimsContext, AuditContext auditContext, ILogger<CoversController> logger)
+    /// <summary>
+    /// Handles HTTP requests related to insurance cover operations.
+    /// </summary>
+    /// <remarks>
+    /// Delegates business logic to <see cref="ICoversService"/> and returns
+    /// the appropriate HTTP responses to API consumers.
+    /// </remarks>
+    [ApiController]
+    [Route("covers")]
+    public class CoversController : ControllerBase
     {
-        _claimsContext = claimsContext;
-        _logger = logger;
-        _auditer = new Auditer(auditContext);
-    }
+        private readonly ICoversService _coversService;
 
-    [HttpPost("compute")]
-    public async Task<ActionResult> ComputePremiumAsync(DateTime startDate, DateTime endDate, CoverType coverType)
-    {
-        return Ok(ComputePremium(startDate, endDate, coverType));
-    }
-
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<Cover>>> GetAsync()
-    {
-        var results = await _claimsContext.Covers.ToListAsync();
-        return Ok(results);
-    }
-
-    [HttpGet("{id}")]
-    public async Task<ActionResult<Cover>> GetAsync(string id)
-    {
-        var results = await _claimsContext.Covers.ToListAsync();
-        return Ok(results.SingleOrDefault(cover => cover.Id == id));
-    }
-
-    [HttpPost]
-    public async Task<ActionResult> CreateAsync(Cover cover)
-    {
-        cover.Id = Guid.NewGuid().ToString();
-        cover.Premium = ComputePremium(cover.StartDate, cover.EndDate, cover.Type);
-        _claimsContext.Covers.Add(cover);
-        await _claimsContext.SaveChangesAsync();
-        _auditer.AuditCover(cover.Id, "POST");
-        return Ok(cover);
-    }
-
-    [HttpDelete("{id}")]
-    public async Task DeleteAsync(string id)
-    {
-        _auditer.AuditCover(id, "DELETE");
-        var cover = await _claimsContext.Covers.Where(cover => cover.Id == id).SingleOrDefaultAsync();
-        if (cover is not null)
+        /// <summary>
+        /// Initializes a new instance of <see cref="CoversController"/>.
+        /// </summary>
+        /// <param name="coversService">The service responsible for managing covers.</param>
+        public CoversController(ICoversService coversService)
         {
-            _claimsContext.Covers.Remove(cover);
-            await _claimsContext.SaveChangesAsync();
-        }
-    }
-
-    private decimal ComputePremium(DateTime startDate, DateTime endDate, CoverType coverType)
-    {
-        var multiplier = 1.3m;
-        if (coverType == CoverType.Yacht)
-        {
-            multiplier = 1.1m;
+            _coversService = coversService;
         }
 
-        if (coverType == CoverType.PassengerShip)
+        /// <summary>
+        /// Retrieves all available insurance covers.
+        /// </summary>
+        /// <returns>A collection of covers with an HTTP 200 response.</returns>
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<CoverResponseDto>>> GetAsync()
         {
-            multiplier = 1.2m;
+            var result = await _coversService.GetCoversAsync();
+            return Ok(result);
         }
 
-        if (coverType == CoverType.Tanker)
+        /// <summary>
+        /// Retrieves an insurance cover by its unique identifier.
+        /// </summary>
+        /// <param name="id">The unique identifier of the cover.</param>
+        /// <returns>The requested cover with an HTTP 200 response.</returns>
+        [HttpGet("{id}")]
+        public async Task<ActionResult<CoverResponseDto>> GetAsync(string id)
         {
-            multiplier = 1.5m;
+            var result = await _coversService.GetCoverAsync(id);
+
+            return Ok(result);
         }
 
-        var premiumPerDay = 1250 * multiplier;
-        var insuranceLength = (endDate - startDate).TotalDays;
-        var totalPremium = 0m;
-
-        for (var i = 0; i < insuranceLength; i++)
+        /// <summary>
+        /// Creates a new insurance cover.
+        /// </summary>
+        /// <param name="cover">The request containing the cover details.</param>
+        /// <returns>The created cover and a success response.</returns>
+        [HttpPost]
+        public async Task<ActionResult<ApiSuccessResponseDto<CoverResponseDto>>> CreateAsync(CoverRequestDto cover)
         {
-            if (i < 30) totalPremium += premiumPerDay;
-            if (i < 180 && coverType == CoverType.Yacht) totalPremium += premiumPerDay - premiumPerDay * 0.05m;
-            else if (i < 180) totalPremium += premiumPerDay - premiumPerDay * 0.02m;
-            if (i < 365 && coverType != CoverType.Yacht) totalPremium += premiumPerDay - premiumPerDay * 0.03m;
-            else if (i < 365) totalPremium += premiumPerDay - premiumPerDay * 0.08m;
+            var result = await _coversService.AddCoverAsync(cover);
+
+            return Ok(result);
         }
 
-        return totalPremium;
+        /// <summary>
+        /// Deletes an existing insurance cover.
+        /// </summary>
+        /// <param name="id">The unique identifier of the cover to delete.</param>
+        /// <returns>An HTTP 204 response when the deletion succeeds.</returns>
+        [HttpDelete("{id}")]
+        public async Task<ActionResult> DeleteAsync(string id)
+        {
+            await _coversService.DeleteCoverAsync(id);
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Calculates the insurance premium based on the cover period and type.
+        /// </summary>
+        /// <param name="startDate">The start date of the cover.</param>
+        /// <param name="endDate">The end date of the cover.</param>
+        /// <param name="coverType">The type of insurance cover.</param>
+        /// <returns>The calculated premium with an HTTP 200 response.</returns>
+        [HttpPost("compute")]
+        public ActionResult ComputePremium(DateTime startDate, DateTime endDate, CoverType coverType)
+        {
+
+            var result = _coversService.ComputePremium(startDate, endDate, coverType);
+
+            return Ok(result);
+        }
+
     }
 }
